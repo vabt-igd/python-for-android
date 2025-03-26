@@ -60,19 +60,6 @@ testapps-with-numpy/%: virtualenv
     --arch=armeabi-v7a --arch=arm64-v8a --arch=x86_64 --arch=x86 \
 	--permission "(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=18)" --permission "(name=android.permission.INTERNET)"
 
-testapps-with-scipy: testapps-with-scipy/debug/apk testapps-with-scipy/release/aab
-
-# testapps-with-scipy/MODE/ARTIFACT
-testapps-with-scipy/%: virtualenv
-	$(eval MODE := $(word 2, $(subst /, ,$@)))
-	$(eval ARTIFACT := $(word 3, $(subst /, ,$@)))
-	@echo Building testapps-with-scipy for $(MODE) mode and $(ARTIFACT) artifact
-	. $(ACTIVATE) && cd testapps/on_device_unit_tests/ && \
-	export LEGACY_NDK=$(ANDROID_NDK_HOME_LEGACY)  && \
-    python setup.py $(ARTIFACT) --$(MODE) --sdk-dir $(ANDROID_SDK_HOME) --ndk-dir $(ANDROID_NDK_HOME) \
-			--requirements python3,scipy,kivy \
-    --arch=armeabi-v7a --arch=arm64-v8a
-
 testapps-webview: testapps-webview/debug/apk testapps-webview/release/aab
 
 # testapps-webview/MODE/ARTIFACT

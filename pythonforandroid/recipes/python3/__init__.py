@@ -141,7 +141,7 @@ class Python3Recipe(TargetPythonRecipe):
 
     site_packages_dir_blacklist = {
         '__pycache__',
-        'tests'
+        # 'tests'
     }
     '''The directories from site packages dir that we don't want to be included
     in our python bundle.'''
