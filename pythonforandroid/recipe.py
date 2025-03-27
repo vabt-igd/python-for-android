@@ -109,7 +109,7 @@ class Recipe(metaclass=RecipeMeta):
     recipe if they are built at all, but whose presence is not essential.'''
 
     patches = []
-    '''Alist of patches to apply to the source. Values can be either a string
+    '''A list of patches to apply to the source. Values can be either a string
     referring to the patch file relative to the recipe dir, or a tuple of the
     string patch file and a callable, which will receive the kwargs `arch` and
     `recipe`, which should return True if the patch should be applied.'''
