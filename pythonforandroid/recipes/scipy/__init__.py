@@ -1,11 +1,13 @@
+import os
 from os.path import join, dirname, basename
 from pythonforandroid.recipe import MesonRecipe, Recipe
+from pythonforandroid.logger import warning
 from pathlib import Path
 
 
 class ScipyRecipe(MesonRecipe):
 
-    version = "v1.15.2"
+    version = "v1.16.2"
     url = "git+https://github.com/scipy/scipy.git"
     depends = ["numpy", "libopenblas", "fortran"]
     need_stl_shared = True
@@ -53,6 +55,19 @@ class ScipyRecipe(MesonRecipe):
             self.ctx.python_recipe.link_version,
         )
         return env
+
+    def build_arch(self, arch):
+        if arch.arch not in ["arm64-v8a", "x86_64"]:
+            warning(
+                "SciPy supports only 64-bit Android architectures: arm64-v8a and x86_64; skipping build."
+            )
+            return
+
+        if os.name != "posix":
+            warning("Building SciPy is only supported on Linux; skipping.")
+            return
+
+        super().build_arch(arch)
 
 
 recipe = ScipyRecipe()
