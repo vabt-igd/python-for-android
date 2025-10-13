@@ -12,6 +12,7 @@ import urllib.request
 from urllib.request import urlretrieve
 from os import listdir, unlink, environ, curdir, walk
 from sys import stdout
+from multiprocessing import cpu_count
 import time
 try:
     from urlparse import urlparse
@@ -157,7 +158,7 @@ class Recipe(metaclass=RecipeMeta):
 
     min_ndk_api_support = 20
     '''
-    Minimum ndk api your recipe will support
+    Minimum ndk api recipe will support.
     '''
 
     def get_stl_library(self, arch):
@@ -274,7 +275,6 @@ class Recipe(metaclass=RecipeMeta):
                     shprint(sh.git, 'pull')
                     shprint(sh.git, 'pull', '--recurse-submodules')
                 shprint(sh.git, 'submodule', 'update', '--recursive', '--init', '--depth', '1')
-
             return target
 
     def apply_patch(self, filename, arch, build_dir=None):
@@ -384,9 +384,7 @@ class Recipe(metaclass=RecipeMeta):
         if self.ctx.ndk_api < self.min_ndk_api_support:
             error(f"In order to build '{self.name}', you must set minimum ndk api (minapi) to `{self.min_ndk_api_support}`.\n")
             exit(1)
-
         info_main('Downloading {}'.format(self.name))
-
         user_dir = environ.get('P4A_{}_DIR'.format(self.name.lower()))
         if user_dir is not None:
             info('P4A_{}_DIR is set, skipping download for {}'.format(
@@ -520,7 +518,7 @@ class Recipe(metaclass=RecipeMeta):
                     for entry in listdir(extraction_filename):
                         # Previously we filtered out the .git folder, but during the build process for some recipes
                         # (e.g. when version is parsed by `setuptools_scm`) that may be needed.
-                        shprint(sh.cp, '-Rv',
+                        shprint(sh.cp, '-R',
                                 join(extraction_filename, entry),
                                 directory_name)
                 else:
@@ -833,6 +831,8 @@ class NDKRecipe(Recipe):
             shprint(
                 sh.Command(join(self.ctx.ndk_dir, "ndk-build")),
                 'V=1',
+                "-j",
+                str(cpu_count()),
                 'NDK_DEBUG=' + ("1" if self.ctx.build_as_debuggable else "0"),
                 'APP_PLATFORM=android-' + str(self.ctx.ndk_api),
                 'APP_ABI=' + arch.arch,
@@ -881,6 +881,8 @@ class PythonRecipe(Recipe):
     hostpython_prerequisites = []
     '''List of hostpython packages required to build a recipe'''
 
+    _host_recipe = None
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if 'python3' not in self.depends:
@@ -892,6 +894,10 @@ class PythonRecipe(Recipe):
             depends.append('python3')
             depends = list(set(depends))
             self.depends = depends
+
+    def prebuild_arch(self, arch):
+        self._host_recipe = Recipe.get_recipe("hostpython3", self.ctx)
+        return super().prebuild_arch(arch)
 
     def clean_build(self, arch=None):
         super().clean_build(arch=arch)
@@ -910,8 +916,7 @@ class PythonRecipe(Recipe):
     def real_hostpython_location(self):
         host_name = 'host{}'.format(self.ctx.python_recipe.name)
         if host_name == 'hostpython3':
-            python_recipe = Recipe.get_recipe(host_name, self.ctx)
-            return python_recipe.python_exe
+            return self._host_recipe.python_exe
         else:
             python_recipe = self.ctx.python_recipe
             return 'python{}'.format(python_recipe.version)
@@ -942,7 +947,7 @@ class PythonRecipe(Recipe):
             if line.split("#!")[-1].strip() == original_bin:
                 return
 
-            info(f"Fixing sheband for '{_file}'")
+            info(f"Fixing shebang for '{_file}'")
             data.pop(0)
             data.insert(0, "#!" + original_bin + "\n")
             _file_des.close()
@@ -951,19 +956,29 @@ class PythonRecipe(Recipe):
             _file_des.close()
 
     def patch_shebangs(self, path, original_bin):
+        if not isdir(path):
+            warning(f"Shebang patch skipped: '{path}' does not exist.")
+            return
         # set correct shebang
         for file in listdir(path):
             _file = join(path, file)
             self.patch_shebang(_file, original_bin)
 
     def get_recipe_env(self, arch=None, with_flags_in_cc=True):
+        if self._host_recipe is None:
+            self._host_recipe = Recipe.get_recipe("hostpython3", self.ctx)
+
         env = super().get_recipe_env(arch, with_flags_in_cc)
-        env['PYTHONNOUSERSITE'] = '1'
         # Set the LANG, this isn't usually important but is a better default
         # as it occasionally matters how Python e.g. reads files
         env['LANG'] = "en_GB.UTF-8"
+
         # Binaries made by packages installed by pip
-        env["PATH"] = join(self.hostpython_site_dir, "bin") + ":" + env["PATH"]
+        self.patch_shebangs(self._host_recipe.local_bin, self.real_hostpython_location)
+        env["PATH"] = self._host_recipe.local_bin + ":" + self._host_recipe.site_bin + ":" + env["PATH"]
+
+        host_env = self.get_hostrecipe_env()
+        env['PYTHONPATH'] = host_env["PYTHONPATH"]
 
         if not self.call_hostpython_via_targetpython:
             env['CFLAGS'] += ' -I{}'.format(
@@ -974,18 +989,6 @@ class PythonRecipe(Recipe):
                 self.ctx.python_recipe.link_version,
             )
 
-            hppath = []
-            hppath.append(join(dirname(self.hostpython_location), 'Lib'))
-            hppath.append(join(hppath[0], 'site-packages'))
-            builddir = join(dirname(self.hostpython_location), 'build')
-            if exists(builddir):
-                hppath += [join(builddir, d) for d in listdir(builddir)
-                           if isdir(join(builddir, d))]
-            if len(hppath) > 0:
-                if 'PYTHONPATH' in env:
-                    env['PYTHONPATH'] = ':'.join(hppath + [env['PYTHONPATH']])
-                else:
-                    env['PYTHONPATH'] = ':'.join(hppath)
         return env
 
     def should_build(self, arch):
@@ -1017,18 +1020,25 @@ class PythonRecipe(Recipe):
         hostpython = sh.Command(self.hostpython_location)
         hpenv = env.copy()
         with current_directory(self.get_build_dir(arch.arch)):
-            shprint(hostpython, 'setup.py', 'install', '-O2',
-                    '--root={}'.format(self.ctx.get_python_install_dir(arch.arch)),
-                    '--install-lib=.',
-                    _env=hpenv, *self.setup_extra_args)
 
-            # If asked, also install in the hostpython build dir
-            if self.install_in_hostpython:
-                self.install_hostpython_package(arch)
+            if isfile("setup.py"):
+                shprint(hostpython, 'setup.py', 'install', '-O2',
+                        '--root={}'.format(self.ctx.get_python_install_dir(arch.arch)),
+                        '--install-lib=.',
+                        _env=hpenv, *self.setup_extra_args)
 
-    def get_hostrecipe_env(self, arch):
+                # If asked, also install in the hostpython build dir
+                if self.install_in_hostpython:
+                    self.install_hostpython_package(arch)
+            else:
+                warning("`PythonRecipe.install_python_package` called without `setup.py` file!")
+
+    def get_hostrecipe_env(self, arch=None):
         env = environ.copy()
-        env['PYTHONPATH'] = self.hostpython_site_dir
+        _python_path = self._host_recipe.get_path_to_python()
+        libdir = glob.glob(join(_python_path, "build", "lib*"))
+        env['PYTHONPATH'] = self._host_recipe.site_dir + ":" + join(
+            _python_path, "Modules") + ":" + (libdir[0] if libdir else "")
         return env
 
     @property
@@ -1039,8 +1049,8 @@ class PythonRecipe(Recipe):
         env = self.get_hostrecipe_env(arch)
         real_hostpython = sh.Command(self.real_hostpython_location)
         shprint(real_hostpython, 'setup.py', 'install', '-O2',
-                '--root={}'.format(dirname(self.real_hostpython_location)),
                 '--install-lib=Lib/site-packages',
+                '--root={}'.format(self._host_recipe.site_root),
                 _env=env, *self.setup_extra_args)
 
     @property
@@ -1058,7 +1068,7 @@ class PythonRecipe(Recipe):
         pip_options = [
             "install",
             *packages,
-            "--target", self.hostpython_site_dir, "--python-version",
+            "--target", self._host_recipe.site_dir, "--python-version",
             self.ctx.python_recipe.version,
             # Don't use sources, instead wheels
             "--only-binary=:all:",
@@ -1066,7 +1076,9 @@ class PythonRecipe(Recipe):
         if force_upgrade:
             pip_options.append("--upgrade")
         # Use system's pip
-        shprint(sh.pip, *pip_options)
+        pip_env = self.get_hostrecipe_env()
+        pip_env["HOME"] = "/tmp"
+        shprint(sh.Command(self.real_hostpython_location), "-m", "pip", *pip_options, _env=pip_env)
 
     def restore_hostpython_prerequisites(self, packages):
         _packages = []
@@ -1251,7 +1263,7 @@ class PyProjectRecipe(PythonRecipe):
         build_opts = join(build_dir, "build-opts.cfg")
 
         with open(build_opts, "w") as file:
-            file.write("[bdist_wheel]\nplat-name={}".format(
+            file.write("[bdist_wheel]\nplat_name={}".format(
                 self.get_wheel_platform_tag(arch)
             ))
             file.close()
@@ -1260,7 +1272,7 @@ class PyProjectRecipe(PythonRecipe):
         return env
 
     def get_wheel_platform_tag(self, arch):
-        return "android_" + {
+        return f"android_{self.ctx.ndk_api}_" + {
             "armeabi-v7a": "arm",
             "arm64-v8a": "aarch64",
             "x86_64": "x86_64",
@@ -1294,13 +1306,17 @@ class PyProjectRecipe(PythonRecipe):
             wf.close()
 
     def build_arch(self, arch):
-        self.install_hostpython_prerequisites(
-            packages=["build[virtualenv]", "pip"] + self.hostpython_prerequisites
-        )
-        python_bin_dir = join(self.hostpython_site_dir, "bin")
-        self.patch_shebangs(python_bin_dir, self.real_hostpython_location)
 
         build_dir = self.get_build_dir(arch.arch)
+        if not (isfile(join(build_dir, "pyproject.toml")) or isfile(join(build_dir, "setup.py"))):
+            warning("Skipping build because it does not appear to be a Python project.")
+            return
+
+        self.install_hostpython_prerequisites(
+            packages=["build[virtualenv]", "pip", "setuptools"] + self.hostpython_prerequisites
+        )
+        self.patch_shebangs(self._host_recipe.site_bin, self.real_hostpython_location)
+
         env = self.get_recipe_env(arch, with_flags_in_cc=True)
         # make build dir separately
         sub_build_dir = join(build_dir, "p4a_android_build")
@@ -1348,7 +1364,6 @@ class MesonRecipe(PyProjectRecipe):
                 "cpp_args": self.sanitize_flags(env["CXXFLAGS"], env["CPPFLAGS"]),
                 "c_link_args": self.sanitize_flags(env["LDFLAGS"]),
                 "cpp_link_args": self.sanitize_flags(env["LDFLAGS"]),
-                "fortran_link_args": self.sanitize_flags(env["LDFLAGS"]),
             },
             "properties": {
                 "needs_exe_wrapper": True,
@@ -1456,7 +1471,7 @@ class RustCompiledComponentsRecipe(PyProjectRecipe):
 
         env["PYO3_CROSS_LIB_DIR"] = realpath(glob.glob(join(
             realpython_dir, "android-build", "build",
-            "lib.linux-*-{}/".format(self.python_major_minor_version),
+            "lib.*{}/".format(self.python_major_minor_version),
         ))[0])
 
         info_main("Ensuring rust build toolchain")
