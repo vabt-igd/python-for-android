@@ -153,7 +153,7 @@ class Python3Recipe(TargetPythonRecipe):
 
     site_packages_dir_blacklist = {
         '__pycache__',
-        # 'tests'
+        'tests'
     }
     '''The directories from site packages dir that we don't want to be included
     in our python bundle.'''
@@ -389,12 +389,17 @@ class Python3Recipe(TargetPythonRecipe):
         place.
         """
         # Todo: find a better way to find the build libs folder
-        modules_build_dir = glob.glob(join(
+        modules_build_dir = join(
             self.get_build_dir(arch.arch),
             'android-build',
             'build',
-            'lib.*'
-        ))[0]
+            'lib.{}{}-{}-{}'.format(
+                # android is now supported platform
+                "android" if self._p_version.minor >= 13 else "linux",
+                '2' if self.version[0] == '2' else '',
+                arch.command_prefix.split('-')[0],
+                self.major_minor_version_string
+            ))
 
         # Compile to *.pyc the python modules
         self.compile_python_files(modules_build_dir)

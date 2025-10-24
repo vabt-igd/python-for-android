@@ -14,7 +14,7 @@ class LibffiRecipe(Recipe):
         - `libltdl-dev` which defines the `LT_SYS_SYMBOL_USCORE` macro
     """
     name = 'libffi'
-    version = 'v3.4.2'
+    version = 'v3.5.2'
     url = 'https://github.com/libffi/libffi/archive/{version}.tar.gz'
 
     patches = ['remove-version-info.patch']
@@ -35,7 +35,9 @@ class LibffiRecipe(Recipe):
             shprint(sh.make, '-j', str(cpu_count()), 'libffi.la', _env=env)
 
     def get_include_dirs(self, arch):
-        return [join(self.get_build_dir(arch), 'include')]
+        if arch is None:
+            arch = self.filtered_archs[0]
+        return [join(self.get_build_dir(arch.arch), 'include')]
 
 
 recipe = LibffiRecipe()
