@@ -535,6 +535,11 @@ class Recipe(metaclass=RecipeMeta):
         if arch is None:
             arch = self.filtered_archs[0]
         env = arch.get_env(with_flags_in_cc=with_flags_in_cc)
+
+        for proxy_key in ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy']:
+            if proxy_key in environ:
+                env[proxy_key] = environ[proxy_key]
+
         return env
 
     def prebuild_arch(self, arch):
@@ -1021,8 +1026,8 @@ class PythonRecipe(Recipe):
         hpenv = env.copy()
         with current_directory(self.get_build_dir(arch.arch)):
             shprint(hostpython, '-m', 'pip', 'install', '.',
-                    '--compile',
-                    f'--root={self.ctx.get_python_install_dir(arch.arch)}',
+                    '--compile', '--target',
+                    self.ctx.get_python_install_dir(arch.arch),
                     _env=hpenv, *self.setup_extra_args
             )
 
@@ -1043,7 +1048,6 @@ class PythonRecipe(Recipe):
         real_hostpython = sh.Command(self.real_hostpython_location)
         shprint(real_hostpython, '-m', 'pip', 'install', '.',
                 '--compile',
-                '--install-lib=Lib/site-packages',
                 '--root={}'.format(self._host_recipe.site_root),
                 _env=env, *self.setup_extra_args)
 

@@ -63,6 +63,7 @@ public class PythonUtil {
         boolean foundPython = false;
 
         for (String lib : getLibraries(libsDir)) {
+            if (lib.startsWith("python") && foundPython) {continue;}
             Log.v(TAG, "Loading library: " + lib);
             try {
                 System.loadLibrary(lib);
