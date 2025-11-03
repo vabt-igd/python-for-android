@@ -11,8 +11,8 @@ from pythonforandroid.util import current_directory
 
 class LibLzmaRecipe(Recipe):
 
-    version = '5.2.4'
-    url = 'https://tukaani.org/xz/xz-{version}.tar.gz'
+    version = '5.8.1'
+    url = 'https://github.com/tukaani-project/xz/archive/refs/tags/v{version}.tar.gz'
     built_libraries = {'liblzma.so': 'p4a_install/lib'}
 
     def build_arch(self, arch: Arch) -> None:
