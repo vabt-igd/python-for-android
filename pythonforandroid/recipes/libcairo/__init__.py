@@ -4,7 +4,6 @@ from pythonforandroid.util import ensure_dir, current_directory
 from pythonforandroid.logger import shprint
 from multiprocessing import cpu_count
 import sh
-import os
 
 
 class LibCairoRecipe(MesonRecipe):
@@ -74,10 +73,11 @@ class LibCairoRecipe(MesonRecipe):
                     _env=env)
 
             shprint(sh.ninja, '-C', 'builddir', '-j', str(cpu_count()), _env=env)
-
-            lib_path = join(build_dir, 'install', 'lib')
-            os.remove(lib_path)
-            ensure_dir(lib_path)
+            # macOS fix: sometimes Ninja creates a dummy 'lib' file instead of a directory.
+            # So we remove and recreate the install directory using shell commands,
+            # since os.remove/os.makedirs behave inconsistently in this build env.
+            shprint(sh.rm, '-rf', install_dir)
+            shprint(sh.mkdir, install_dir)
 
             shprint(sh.ninja, '-C', 'builddir', 'install', _env=env)
 
