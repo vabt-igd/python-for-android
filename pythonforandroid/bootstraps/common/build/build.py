@@ -890,6 +890,9 @@ tools directory of the Android SDK.
                     default=[],
                     action='append',
                     help='Ddd a repository for gradle')
+    ap.add_argument('--add-gradle-arguments', dest='gradle_arguments',
+                    default=[], action='append',
+                    help='Add extra arguments to pass to the Gradle command')
     ap.add_argument('--add-packaging-option', dest='packaging_options',
                     default=[],
                     action='append',
