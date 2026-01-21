@@ -1044,7 +1044,8 @@ class ToolchainCL:
                     "Unknown build mode {} for apk()".format(args.build_mode))
 
             # Extra Gradle args (e.g. -Dorg.gradle.jvmargs=-Xmx4g)
-            gradle_extra = getattr(args, 'gradle_arguments', []) or []
+            gradle_extra = getattr(build_args, 'gradle_arguments', []) or []
+            info(('User-provided Gradle extra args: {}').format(gradle_extra))
 
             # WARNING: We should make sure to clean the build directory before building.
             # See PR: kivy/python-for-android#2705
