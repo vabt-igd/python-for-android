@@ -1345,7 +1345,6 @@ class MesonRecipe(PyProjectRecipe):
 
     meson_version = "1.4.0"
     ninja_version = "1.11.1.1"
-    skip_python = False
 
     skip_python = False
     '''If true, skips all Python build and installation steps.
